@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Retail Control & Compliance</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        navy: {
+          50: '#f0f4f8', 100: '#d9e2ec', 200: '#bcccdc', 300: '#9fb3c8',
+          400: '#829ab1', 500: '#627d98', 600: '#486581', 700: '#334e68',
+          800: '#243b53', 900: '#102a43'
+        }
+      }
+    }
+  }
+}
+</script>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; }
+  .btn-primary { @apply bg-navy-800 text-white px-6 py-3 rounded-lg font-semibold text-lg hover:bg-navy-900 active:scale-95 transition min-h-[48px]; }
+  .btn-secondary { @apply bg-white border-2 border-navy-300 text-navy-800 px-6 py-3 rounded-lg font-semibold hover:bg-navy-50 active:scale-95 transition min-h-[48px]; }
+  .card { @apply bg-white rounded-xl shadow-sm border border-gray-200 p-5; }
+  .input-field { @apply w-full border border-gray-300 rounded-lg px-4 py-3 text-lg focus:ring-2 focus:ring-navy-500 focus:border-navy-500 outline-none; }
+  .status-green { @apply bg-green-100 text-green-800; }
+  .status-red { @apply bg-red-100 text-red-800; }
+  .status-amber { @apply bg-amber-100 text-amber-800; }
+</style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+<div id="app"></div>
+
+<script>
+const SHOPS = [
+  { id: 'albarka-kubwa-1', name: 'Albarka — Kubwa Shop 1', business: 'Albarka', location: 'Kubwa', manager: 'Mubarak', assistant: "Rufa'i" },
+  { id: 'albarka-kubwa-2', name: 'Albarka — Kubwa Shop 2', business: 'Albarka', location: 'Kubwa', manager: 'Lukman', assistant: 'Abdurrahman' },
+  { id: 'albarka-dutse-1', name: 'Albarka — Dutse Shop 1', business: 'Albarka', location: 'Dutse', manager: 'Sani', assistant: 'Usama' },
+  { id: 'albarka-dutse-2', name: 'Albarka — Dutse Shop 2', business: 'Albarka', location: 'Dutse', manager: 'Salmanu', assistant: 'Hudu' },
+  { id: 'azzahra-kubwa', name: 'Azzahra — Kubwa', business: 'Azzahra', location: 'Kubwa', manager: 'Usama', assistant: 'Musa' },
+  { id: 'azzahra-dutse', name: 'Azzahra — Dutse', business: 'Azzahra', location: 'Dutse', manager: 'Sadiq', assistant: 'Abdulbasir' }
+];
+
+const USERS = [
+  { id: 'md-rabi', name: 'Hajiya Rabi I. Musa', role: 'md', shops: SHOPS.map(s => s.id) },
+  { id: 'comp-abdullahi', name: 'Abdullahi Saleh Kushaam', role: 'compliance', shops: SHOPS.map(s => s.id) },
+  { id: 'mgr-mubarak', name: 'Mubarak', role: 'area_manager', shops: ['albarka-kubwa-1', 'albarka-kubwa-2'], area: 'Kubwa' },
+  { id: 'mgr-lukman', name: 'Lukman', role: 'manager', shops: ['albarka-kubwa-2'] },
+  { id: 'mgr-sani', name: 'Sani', role: 'area_manager', shops: ['albarka-dutse-1', 'albarka-dutse-2'], area: 'Dutse' },
+  { id: 'mgr-salmanu', name: 'Salmanu', role: 'manager', shops: ['albarka-dutse-2'] },
+  { id: 'mgr-usama-azzahra', name: 'Usama (Azzahra)', role: 'manager', shops: ['azzahra-kubwa'] },
+  { id: 'mgr-sadiq', name: 'Sadiq', role: 'manager', shops: ['azzahra-dutse'] }
+];
+
+const CHECKS = [
+  { key: 'salesRecorded', label: 'All sales recorded in Shopkite and official receipts issued.' },
+  { key: 'priceCompliance', label: 'All products sold at Shopkite prices; no unauthorized credit or discounts.' },
+  { key: 'transfersConfirmed', label: 'All bank transfers confirmed before goods were released.' },
+  { key: 'goodsRecorded', label: 'All goods received and stock movements properly recorded.' },
+  { key: 'noExpired', label: 'No expired, damaged or unauthorized products offered for sale.' },
+  { key: 'shopClean', label: 'Shop clean, products arranged and staff presentable.' },
+  { key: 'cashReconciled', label: 'Cash and records reconciled; shop properly secured.' }
+];
+
+const SCORE_AREAS = [
+  { name: 'Shopkite sales recording', points: 15 },
+  { name: 'Receipt issuance', points: 10 },
+  { name: 'Shopkite price compliance', points: 10 },
+  { name: 'Daily cash and bank reconciliation', points: 15 },
+  { name: 'Credit and loan compliance', points: 10 },
+  { name: 'Inventory accuracy', points: 15 },
+  { name: 'Expiry, quality and NAFDAC compliance', points: 10 },
+  { name: 'Cleanliness and hygiene', points: 5 },
+  { name: 'Staff conduct and customer service', points: 5 },
+  { name: 'Timely reporting and audit cooperation', points: 5 }
+];
+
+let currentUser = null;
+let reports = JSON.parse(localStorage.getItem('retail-reports') || '[]');
+let findings = JSON.parse(localStorage.getItem('retail-findings') || '[]');
+let view = 'dashboard';
+
+function save() {
+  localStorage.setItem('retail-reports', JSON.stringify(reports));
+  localStorage.setItem('retail-findings', JSON.stringify(findings));
+}
+
+function today() { return new Date().toISOString().split('T')[0]; }
+function naira(n) { return '₦' + Number(n || 0).toLocaleString(); }
+function shopById(id) { return SHOPS.find(s => s.id === id); }
+function userById(id) { return USERS.find(u => u.id === id); }
+
+function render() {
+  const app = document.getElementById('app');
+  if (!currentUser) { app.innerHTML = loginScreen(); return; }
+  app.innerHTML = mainLayout();
+}
+
+function loginScreen() {
+  return `
+  <div class="min-h-screen bg-gradient-to-b from-navy-50 to-white flex items-center justify-center p-4">
+    <div class="w-full max-w-md">
+      <div class="text-center mb-8">
+        <div class="w-16 h-16 bg-navy-800 rounded-2xl mx-auto mb-4 flex items-center justify-center">
+          <span class="text-white text-2xl font-bold">RC</span>
+        </div>
+        <h1 class="text-3xl font-bold text-navy-900">Retail Control</h1>
+        <p class="text-navy-600">& Compliance</p>
+        <div class="mt-3 inline-block bg-amber-100 text-amber-800 text-sm font-medium px-3 py-1 rounded-full">DEMO MODE — Illustrative Data Only</div>
+      </div>
+      <div class="card space-y-3">
+        <p class="text-sm text-gray-500 text-center mb-4">Select your role to continue</p>
+        ${USERS.map(u => `
+          <button onclick="login('${u.id}')" class="w-full text-left p-4 rounded-lg border border-gray-200 hover:border-navy-400 hover:bg-navy-50 transition active:scale-[0.98]">
+            <div class="font-semibold text-navy-900">${u.name}</div>
+            <div class="text-sm text-gray-500">${roleLabel(u.role)}</div>
+          </button>`).join('')}
+      </div>
+      <p class="text-center text-xs text-gray-400 mt-6">Albarka Harith Foodstuff Enterprises & Azzahra Fabrics</p>
+    </div>
+  </div>`;
+}
+
+function roleLabel(role) {
+  if (role === 'md') return 'MD / CEO';
+  if (role === 'compliance') return 'Accounts, Internal Control & Compliance';
+  if (role === 'area_manager') return 'Area Manager';
+  return 'Shop Manager';
+}
+
+function login(id) {
+  currentUser = USERS.find(u => u.id === id);
+  view = 'dashboard';
+  render();
+}
+
+function logout() { currentUser = null; render(); }
+
+function mainLayout() {
+  const myShops = currentUser.shops.map(id => shopById(id)).filter(Boolean);
+  return `
+  <div class="min-h-screen bg-gray-50">
+    <header class="bg-navy-900 text-white sticky top-0 z-10">
+      <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div>
+          <h1 class="font-bold text-lg">Retail Control & Compliance</h1>
+          <p class="text-navy-200 text-sm">${currentUser.name}</p>
+        </div>
+        <button onclick="logout()" class="text-sm bg-navy-700 hover:bg-navy-600 px-3 py-1.5 rounded-lg">Logout</button>
+      </div>
+    </header>
+    <nav class="bg-white border-b border-gray-200 sticky top-[60px] z-10">
+      <div class="max-w-5xl mx-auto px-4 flex gap-1 overflow-x-auto">
+        <button onclick="setView('dashboard')" class="px-4 py-3 text-sm font-medium border-b-2 ${view==='dashboard'?'border-navy-800 text-navy-800':'border-transparent text-gray-500'}">Dashboard</button>
+        ${['manager','area_manager'].includes(currentUser.role) ? `<button onclick="setView('daily')" class="px-4 py-3 text-sm font-medium border-b-2 ${view==='daily'?'border-navy-800 text-navy-800':'border-transparent text-gray-500'}">Daily Report</button>` : ''}
+        <button onclick="setView('scorecard')" class="px-4 py-3 text-sm font-medium border-b-2 ${view==='scorecard'?'border-navy-800 text-navy-800':'border-transparent text-gray-500'}">Scorecards</button>
+        <button onclick="setView('history')" class="px-4 py-3 text-sm font-medium border-b-2 ${view==='history'?'border-navy-800 text-navy-800':'border-transparent text-gray-500'}">History</button>
+      </div>
+    </nav>
+    <main class="max-w-5xl mx-auto px-4 py-6">
+      ${view === 'dashboard' ? (currentUser.role === 'compliance' ? complianceDashboard() : mdDashboard()) : ''}
+      ${view === 'daily' ? dailyForm(myShops) : ''}
+      ${view === 'scorecard' ? scorecardView() : ''}
+      ${view === 'history' ? historyView() : ''}
+    </main>
+  </div>`;
+}
+
+function setView(v) { view = v; render(); }
+
+function mdDashboard() {
+  const t = today();
+  const todayReports = reports.filter(r => r.date === t && r.status === 'submitted');
+  const submitted = new Set(todayReports.map(r => r.shopId));
+  const outstanding = SHOPS.filter(s => !submitted.has(s.id));
+  const cashShort = todayReports.filter(r => cashDiff(r) < 0);
+  const salesDiffs = todayReports.filter(r => salesDiff(r) !== 0);
+  const failed = todayReports.filter(r => Object.values(r.checks || {}).some(v => v === false));
+  const totals = todayReports.reduce((a, r) => ({
+    shopkite: a.shopkite + (r.shopkiteSales||0),
+    cash: a.cash + (r.cashSales||0),
+    pos: a.pos + (r.posCollections||0),
+    bank: a.bank + (r.bankTransfers||0),
+    credit: a.credit + (r.approvedCredit||0)
+  }), { shopkite:0, cash:0, pos:0, bank:0, credit:0 });
+
+  return `
+  <div class="space-y-6">
+    <h2 class="text-2xl font-bold text-navy-900">Management Dashboard</h2>
+    <p class="text-sm text-gray-500">Today: ${t}</p>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      ${stat('Total Shops', '6')}
+      ${stat('Reports Submitted', todayReports.length, 'green')}
+      ${stat('Outstanding', outstanding.length, outstanding.length ? 'amber' : 'green')}
+      ${stat('Cash Shortages', cashShort.length, cashShort.length ? 'red' : 'green')}
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      ${stat('Sales Discrepancies', salesDiffs.length, salesDiffs.length ? 'red' : 'green')}
+      ${stat('Failed Checks', failed.length, failed.length ? 'red' : 'green')}
+      ${stat('Total Shopkite Sales', naira(totals.shopkite))}
+      ${stat('Total Cash Collected', naira(totals.cash))}
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+      ${stat('POS + Bank Transfers', naira(totals.pos + totals.bank))}
+      ${stat('Approved Credit', naira(totals.credit))}
+    </div>
+    <div class="card overflow-x-auto">
+      <h3 class="font-semibold text-navy-900 mb-3">Shop-by-Shop Status</h3>
+      <table class="w-full text-sm">
+        <thead><tr class="border-b text-left text-gray-500">
+          <th class="pb-2 pr-3">Shop</th><th class="pb-2 pr-3">Manager</th><th class="pb-2 pr-3">Status</th>
+          <th class="pb-2 pr-3 text-right">Sales Diff</th><th class="pb-2 text-right">Cash Diff</th>
+        </tr></thead>
+        <tbody>
+          ${SHOPS.map(s => {
+            const r = todayReports.find(x => x.shopId === s.id);
+            const sd = r ? salesDiff(r) : null;
+            const cd = r ? cashDiff(r) : null;
+            return `<tr class="border-b border-gray-100">
+              <td class="py-2 pr-3 font-medium">${s.name}</td>
+              <td class="py-2 pr-3">${s.manager}</td>
+              <td class="py-2 pr-3">${r ? '<span class="status-green px-2 py-0.5 rounded text-xs">Submitted</span>' : '<span class="status-amber px-2 py-0.5 rounded text-xs">Outstanding</span>'}</td>
+              <td class="py-2 pr-3 text-right ${sd && sd !== 0 ? 'text-red-600 font-medium' : ''}">${sd !== null ? naira(sd) : '-'}</td>
+              <td class="py-2 text-right ${cd && cd !== 0 ? 'text-red-600 font-medium' : ''}">${cd !== null ? naira(cd) : '-'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function stat(label, value, color) {
+  const c = color === 'green' ? 'text-green-600' : color === 'red' ? 'text-red-600' : color === 'amber' ? 'text-amber-600' : 'text-navy-900';
+  return `<div class="card text-center"><div class="text-2xl font-bold ${c}">${value}</div><div class="text-xs text-gray-500 mt-1">${label}</div></div>`;
+}
+
+function salesDiff(r) {
+  return (r.shopkiteSales||0) - ((r.cashSales||0)+(r.posCollections||0)+(r.bankTransfers||0)+(r.approvedCredit||0));
+}
+function cashDiff(r) {
+  const expected = (r.openingCash||0) + (r.cashSales||0) - (r.cashDeposited||0) - (r.approvedCashPayments||0);
+  return (r.actualClosingCash||0) - expected;
+}
+
+function complianceDashboard() {
+  const recent = reports.filter(r => r.status === 'submitted').slice(-10).reverse();
+  return `
+  <div class="space-y-6">
+    <h2 class="text-2xl font-bold text-navy-900">Compliance Review</h2>
+    <p class="text-sm text-gray-500">Independent access to all six shops. Original financial figures cannot be altered.</p>
+    <div class="card">
+      <h3 class="font-semibold text-navy-900 mb-3">Recent Submitted Reports</h3>
+      <div class="space-y-2">
+        ${recent.map(r => {
+          const shop = shopById(r.shopId);
+          const issue = Object.values(r.checks||{}).some(v => v === false) || salesDiff(r) !== 0;
+          return `<div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+            <div><div class="font-medium">${shop?.name || r.shopId}</div><div class="text-xs text-gray-500">${r.date} • ${naira(r.shopkiteSales)}</div></div>
+            <div class="flex items-center gap-2">
+              ${issue ? '<span class="status-red text-xs px-2 py-0.5 rounded">Review</span>' : ''}
+              <button onclick="flagReport('${r.id}')" class="text-sm bg-navy-800 text-white px-3 py-1 rounded-lg">Flag</button>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+    ${findings.length ? `<div class="card"><h3 class="font-semibold text-navy-900 mb-3">Open Findings</h3>
+      ${findings.map(f => `<div class="border-b border-gray-100 py-3 last:border-0">
+        <div class="flex justify-between"><span class="font-medium">${shopById(f.shopId)?.name || f.shopId}</span><span class="text-xs status-amber px-2 py-0.5 rounded">${f.status}</span></div>
+        <p class="text-sm text-gray-700 mt-1">${f.finding}</p>
+      </div>`).join('')}
+    </div>` : ''}
+  </div>`;
+}
+
+function flagReport(id) {
+  const text = prompt('Describe the finding or required corrective action:');
+  if (!text) return;
+  const r = reports.find(x => x.id === id);
+  findings.push({ id: 'f-'+Date.now(), reportId: id, shopId: r.shopId, finding: text, status: 'open', createdAt: new Date().toISOString() });
+  save();
+  render();
+}
+
+function dailyForm(myShops) {
+  const t = today();
+  const shopId = window.selectedShop || myShops[0]?.id;
+  const existing = reports.find(r => r.shopId === shopId && r.date === t && r.status === 'submitted');
+  if (existing) return `<div class="card text-center py-12"><div class="text-green-600 text-5xl mb-4">✓</div><h2 class="text-xl font-bold text-navy-900">Report Already Submitted</h2><p class="text-gray-600 mt-2">Today's report for this shop has been submitted and locked.</p></div>`;
+
+  const draft = reports.find(r => r.shopId === shopId && r.date === t && r.status === 'draft') || {};
+  const form = {
+    checks: draft.checks || {},
+    explanations: draft.explanations || {},
+    shopkiteSales: draft.shopkiteSales || 0,
+    cashSales: draft.cashSales || 0,
+    posCollections: draft.posCollections || 0,
+    bankTransfers: draft.bankTransfers || 0,
+    approvedCredit: draft.approvedCredit || 0,
+    creditRef: draft.creditRef || '',
+    openingCash: draft.openingCash || 0,
+    cashDeposited: draft.cashDeposited || 0,
+    approvedCashPayments: draft.approvedCashPayments || 0,
+    actualClosingCash: draft.actualClosingCash || 0,
+    salesExp: draft.salesExp || '',
+    cashExp: draft.cashExp || '',
+    confirmed: draft.confirmed || false
+  };
+
+  const accounted = form.cashSales + form.posCollections + form.bankTransfers + form.approvedCredit;
+  const sDiff = form.shopkiteSales - accounted;
+  const expected = form.openingCash + form.cashSales - form.cashDeposited - form.approvedCashPayments;
+  const cDiff = form.actualClosingCash - expected;
+
+  return `
+  <div class="space-y-6" id="daily-form">
+    <div class="flex items-center justify-between">
+      <h2 class="text-2xl font-bold text-navy-900">Daily Shop Control</h2>
+      <span class="text-sm text-gray-500">${t}</span>
+    </div>
+    ${myShops.length > 1 ? `<div class="card"><label class="block text-sm font-medium text-gray-700 mb-2">Select Shop</label>
+      <select onchange="window.selectedShop=this.value; render()" class="input-field">
+        ${myShops.map(s => `<option value="${s.id}" ${s.id===shopId?'selected':''}>${s.name}</option>`).join('')}
+      </select></div>` : ''}
+
+    <div class="card space-y-4">
+      <h3 class="font-semibold text-navy-900">Daily Compliance Checks</h3>
+      ${CHECKS.map(c => `
+        <div class="border-b border-gray-100 pb-4 last:border-0">
+          <p class="text-sm mb-2">${c.label}</p>
+          <div class="flex gap-3">
+            <button onclick="setCheck('${c.key}', true)" class="flex-1 py-2 rounded-lg font-medium ${form.checks[c.key]===true?'bg-green-500 text-white':'bg-gray-100'}">Yes</button>
+            <button onclick="setCheck('${c.key}', false)" class="flex-1 py-2 rounded-lg font-medium ${form.checks[c.key]===false?'bg-red-500 text-white':'bg-gray-100'}">No</button>
+          </div>
+          ${form.checks[c.key]===false ? `<input type="text" placeholder="Explanation and corrective action required" value="${form.explanations[c.key]||''}" onchange="setExp('${c.key}', this.value)" class="input-field mt-2 text-base">` : ''}
+        </div>`).join('')}
+    </div>
+
+    <div class="card space-y-4">
+      <h3 class="font-semibold text-navy-900">Daily Sales Reconciliation</h3>
+      ${numField('Total sales recorded in Shopkite (A)', 'shopkiteSales', form.shopkiteSales)}
+      ${numField('Cash sales collected (B)', 'cashSales', form.cashSales)}
+      ${numField('Confirmed POS collections (C)', 'posCollections', form.posCollections)}
+      ${numField('Confirmed bank transfers (D)', 'bankTransfers', form.bankTransfers)}
+      ${numField('MD/CEO-approved credit sales (E)', 'approvedCredit', form.approvedCredit)}
+      ${form.approvedCredit > 0 ? `<input type="text" placeholder="Approval reference" value="${form.creditRef}" onchange="setField('creditRef', this.value)" class="input-field">` : ''}
+      <div class="p-4 rounded-lg ${sDiff===0?'bg-green-50 border border-green-200':'bg-red-50 border border-red-200'}">
+        <div class="flex justify-between text-sm"><span>Total Accounted For (B+C+D+E)</span><span class="font-semibold">${naira(accounted)}</span></div>
+        <div class="flex justify-between text-lg font-bold mt-1"><span>Sales Difference</span><span class="${sDiff===0?'text-green-600':'text-red-600'}">${naira(sDiff)}</span></div>
+      </div>
+      ${sDiff !== 0 ? `<input type="text" placeholder="Mandatory explanation for sales difference" value="${form.salesExp}" onchange="setField('salesExp', this.value)" class="input-field">` : ''}
+    </div>
+
+    <div class="card space-y-4">
+      <h3 class="font-semibold text-navy-900">Cash Accountability</h3>
+      ${numField('Opening cash balance', 'openingCash', form.openingCash)}
+      <div class="text-sm text-gray-500">Today's cash sales carried forward: ${naira(form.cashSales)}</div>
+      ${numField('Cash deposited or remitted', 'cashDeposited', form.cashDeposited)}
+      ${numField('Approved cash payments', 'approvedCashPayments', form.approvedCashPayments)}
+      ${numField('Actual physical cash counted at closing', 'actualClosingCash', form.actualClosingCash)}
+      <div class="p-4 rounded-lg ${cDiff===0?'bg-green-50 border border-green-200':'bg-red-50 border border-red-200'}">
+        <div class="flex justify-between text-sm"><span>Expected Closing Cash</span><span class="font-semibold">${naira(expected)}</span></div>
+        <div class="flex justify-between text-lg font-bold mt-1"><span>Cash Difference</span><span class="${cDiff===0?'text-green-600':'text-red-600'}">${naira(cDiff)}</span></div>
+      </div>
+      ${cDiff !== 0 ? `<input type="text" placeholder="Mandatory explanation for cash difference" value="${form.cashExp}" onchange="setField('cashExp', this.value)" class="input-field">` : ''}
+    </div>
+
+    <div class="card">
+      <label class="flex items-start gap-3 cursor-pointer">
+        <input type="checkbox" ${form.confirmed?'checked':''} onchange="setField('confirmed', this.checked)" class="mt-1 w-5 h-5">
+        <span class="text-sm">I confirm that the information in this report is accurate and complete to the best of my knowledge.</span>
+      </label>
+    </div>
+
+    <div class="flex gap-3">
+      <button onclick="saveDraft()" class="btn-secondary flex-1">Save Draft</button>
+      <button onclick="submitReport()" class="flex-1 py-3 rounded-lg font-semibold text-lg bg-navy-800 text-white hover:bg-navy-900">Submit Report</button>
+    </div>
+  </div>`;
+}
+
+function numField(label, key, value) {
+  return `<div><label class="block text-sm font-medium text-gray-700 mb-1">${label}</label>
+    <div class="relative"><span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">₦</span>
+    <input type="number" min="0" value="${value||''}" onchange="setField('${key}', Math.max(0, Number(this.value)||0))" class="input-field pl-8"></div></div>`;
+}
+
+window.formState = window.formState || {};
+function setField(k, v) { window.formState[k] = v; }
+function setCheck(k, v) { window.formState.checks = window.formState.checks || {}; window.formState.checks[k] = v; render(); }
+function setExp(k, v) { window.formState.explanations = window.formState.explanations || {}; window.formState.explanations[k] = v; }
+
+function getFormData(shopId) {
+  const t = today();
+  const draft = reports.find(r => r.shopId === shopId && r.date === t && r.status === 'draft') || {};
+  return { ...draft, ...window.formState, shopId, date: t, managerId: currentUser.id };
+}
+
+function saveDraft() {
+  const shopId = window.selectedShop || currentUser.shops[0];
+  const data = getFormData(shopId);
+  data.status = 'draft';
+  data.id = data.id || 'draft-'+shopId+'-'+today();
+  reports = reports.filter(r => !(r.shopId === shopId && r.date === today() && r.status === 'draft'));
+  reports.push(data);
+  save();
+  alert('Draft saved');
+}
+
+function submitReport() {
+  const shopId = window.selectedShop || currentUser.shops[0];
+  const data = getFormData(shopId);
+  const allChecked = CHECKS.every(c => data.checks && data.checks[c.key] !== undefined && data.checks[c.key] !== null);
+  if (!allChecked) { alert('Please answer all 7 checks'); return; }
+  if (!data.confirmed) { alert('Please confirm accuracy'); return; }
+  const sDiff = salesDiff(data);
+  const cDiff = cashDiff(data);
+  if (sDiff !== 0 && !data.salesExp) { alert('Sales difference requires explanation'); return; }
+  if (cDiff !== 0 && !data.cashExp) { alert('Cash difference requires explanation'); return; }
+  if (CHECKS.some(c => data.checks[c.key] === false && !(data.explanations && data.explanations[c.key]))) {
+    alert('Every "No" answer requires an explanation'); return;
+  }
+
+  data.status = 'submitted';
+  data.submittedAt = new Date().toISOString();
+  data.id = 'rpt-'+shopId+'-'+today()+'-'+Date.now();
+  reports = reports.filter(r => !(r.shopId === shopId && r.date === today()));
+  reports.push(data);
+  window.formState = {};
+  save();
+  alert('Report submitted successfully. It cannot be edited. Amendments require management approval.');
+  render();
+}
+
+function scorecardView() {
+  return `
+  <div class="space-y-6">
+    <h2 class="text-2xl font-bold text-navy-900">Monthly Compliance Scorecards</h2>
+    <p class="text-sm text-gray-500">Illustrative scores based on submitted reports.</p>
+    <div class="grid gap-4">
+      ${SHOPS.map(s => {
+        const score = calcScore(s.id);
+        const rating = score >= 95 ? ['Excellent','text-green-600 bg-green-50'] : score >= 85 ? ['Good','text-green-700 bg-green-50'] : score >= 70 ? ['Needs Improvement','text-amber-700 bg-amber-50'] : ['Unsatisfactory','text-red-700 bg-red-50'];
+        return `<div class="card">
+          <div class="flex items-center justify-between mb-3">
+            <div><h3 class="font-semibold text-navy-900">${s.name}</h3><p class="text-sm text-gray-500">${s.business} • ${s.location}</p></div>
+            <div class="text-right"><div class="text-3xl font-bold text-navy-900">${score}</div><span class="text-xs font-medium px-2 py-0.5 rounded ${rating[1]}">${rating[0]}</span></div>
+          </div>
+          <div class="w-full bg-gray-200 rounded-full h-2"><div class="bg-navy-700 h-2 rounded-full" style="width:${score}%"></div></div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="card">
+      <h3 class="font-semibold text-navy-900 mb-3">Scorecard Criteria (100 points)</h3>
+      ${SCORE_AREAS.map(a => `<div class="flex justify-between py-1 border-b border-gray-50 text-sm"><span>${a.name}</span><span class="font-medium">${a.points}</span></div>`).join('')}
+      <div class="flex justify-between py-2 font-bold border-t"><span>Total</span><span>100</span></div>
+    </div>
+  </div>`;
+}
+
+function calcScore(shopId) {
+  const rs = reports.filter(r => r.shopId === shopId && r.status === 'submitted').slice(-5);
+  if (!rs.length) return 80;
+  let score = 100;
+  rs.forEach(r => {
+    const failed = Object.values(r.checks||{}).filter(v => v === false).length;
+    score -= failed * 3;
+    if (salesDiff(r) !== 0) score -= 5;
+    if (cashDiff(r) !== 0) score -= 5;
+  });
+  return Math.max(50, Math.min(100, score));
+}
+
+function historyView() {
+  const sorted = [...reports].reverse();
+  return `
+  <div class="space-y-4">
+    <h2 class="text-2xl font-bold text-navy-900">Report History</h2>
+    <div class="card overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead><tr class="border-b text-left text-gray-500"><th class="pb-2 pr-4">Date</th><th class="pb-2 pr-4">Shop</th><th class="pb-2 pr-4">Status</th><th class="pb-2 text-right">Shopkite Sales</th></tr></thead>
+        <tbody>
+          ${sorted.map(r => `<tr class="border-b border-gray-100">
+            <td class="py-2 pr-4">${r.date}</td>
+            <td class="py-2 pr-4">${shopById(r.shopId)?.name || r.shopId}</td>
+            <td class="py-2 pr-4"><span class="px-2 py-0.5 rounded text-xs font-medium ${r.status==='submitted'?'status-green':'status-amber'}">${r.status}</span></td>
+            <td class="py-2 text-right">${naira(r.shopkiteSales)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-sm text-gray-500">Data is stored in your browser only (demo mode). For production, export and connect to a backend.</p>
+  </div>`;
+}
+
+// Seed some demo data if empty
+if (reports.length === 0) {
+  const t = today();
+  reports = [
+    { id: 'demo1', shopId: 'albarka-kubwa-1', date: t, managerId: 'mgr-mubarak', status: 'submitted', submittedAt: new Date().toISOString(),
+      checks: { salesRecorded:true, priceCompliance:true, transfersConfirmed:true, goodsRecorded:true, noExpired:true, shopClean:true, cashReconciled:true },
+      shopkiteSales: 185000, cashSales: 92000, posCollections: 45000, bankTransfers: 48000, approvedCredit: 0,
+      openingCash: 25000, cashDeposited: 85000, approvedCashPayments: 2000, actualClosingCash: 30000, confirmed: true },
+    { id: 'demo2', shopId: 'albarka-kubwa-2', date: t, managerId: 'mgr-lukman', status: 'submitted', submittedAt: new Date().toISOString(),
+      checks: { salesRecorded:true, priceCompliance:false, transfersConfirmed:true, goodsRecorded:true, noExpired:true, shopClean:true, cashReconciled:true },
+      explanations: { priceCompliance: 'One customer given 5% discount without approval. Manager warned.' },
+      shopkiteSales: 142000, cashSales: 71000, posCollections: 38000, bankTransfers: 28000, approvedCredit: 5000, creditRef: 'MD-2026-10-29-001',
+      openingCash: 18000, cashDeposited: 65000, approvedCashPayments: 1500, actualClosingCash: 22500, confirmed: true }
+  ];
+  save();
+}
+
+render();
+</script>
+</body>
+</html>
